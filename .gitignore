@@ -14,3 +14,7 @@ google-services.json
 data/
 *.db-shm
 *.db-wal
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties

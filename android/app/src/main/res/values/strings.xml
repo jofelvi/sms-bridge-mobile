@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SMS Bridge</string>
+    <string name="subtitle">Pasarela de SMS con tu propia linea</string>
+    <string name="status_unknown">Sin configurar</string>
+    <string name="label_url">URL del servidor</string>
+    <string name="hint_url">https://tu-servidor.com</string>
+    <string name="label_token">Token del dispositivo</string>
+    <string name="hint_token">DEVICE_TOKEN del servidor</string>
+    <string name="action_save">Guardar</string>
+    <string name="action_test">Probar conexion</string>
+    <string name="action_start">Encender pasarela</string>
+    <string name="action_stop">Apagar pasarela</string>
+    <string name="action_battery">Excluir de optimizacion de bateria</string>
+    <string name="battery_hint">Si Android duerme la app, la pasarela deja de enviar. Esta exclusion es la causa numero uno de fallos silenciosos.</string>
+</resources>
