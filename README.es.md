@@ -57,6 +57,57 @@ curl -X POST localhost:8080/api/messages \
 **5. Instala la app Android** ([última versión](../../releases/latest)), pega la URL de tu servidor y el `DEVICE_TOKEN`, toca **Encender pasarela** — y el mensaje sale por tu línea.
 
 > La app necesita permisos de SMS, por eso se distribuye como APK (sideload) y no por Play Store. Ver [Notas](#notas).
+>
+> 🔍 **¿Prefieres no confiar en un binario?** La app entera son 930 líneas de Kotlin — [léela](android/app/src/main/java/com/odincodex/smsbridge/) o [compílala tú mismo](#audítala-tú-mismo--no-confíes-en-el-binario).
+
+## Audítala tú mismo — no confíes en el binario
+
+Estás a punto de darle a una app permiso para **leer y enviar tus SMS**. Deberías desconfiar. Por eso la app completa está aquí, y es deliberadamente pequeña para que la leas de una sentada: **9 archivos, 930 líneas de Kotlin**.
+
+| Archivo | Líneas | Qué hace |
+|---|---|---|
+| [`BridgeService.kt`](android/app/src/main/java/com/odincodex/smsbridge/BridgeService.kt) | 224 | Servicio en primer plano: mantiene viva la pasarela y vacía la cola |
+| [`MainActivity.kt`](android/app/src/main/java/com/odincodex/smsbridge/MainActivity.kt) | 160 | La única pantalla: URL, token, encender/apagar |
+| [`PushClient.kt`](android/app/src/main/java/com/odincodex/smsbridge/PushClient.kt) | 122 | WebSocket contra **tu** servidor + reconexión |
+| [`ApiClient.kt`](android/app/src/main/java/com/odincodex/smsbridge/ApiClient.kt) | 120 | Todas las llamadas HTTP que hace la app — todas |
+| [`SmsSender.kt`](android/app/src/main/java/com/odincodex/smsbridge/SmsSender.kt) | 106 | Envía el SMS y pide el acuse de entrega |
+| [`SmsSentReceiver.kt`](android/app/src/main/java/com/odincodex/smsbridge/SmsSentReceiver.kt) | 87 | Reporta enviado/entregado/fallido |
+| [`Settings.kt`](android/app/src/main/java/com/odincodex/smsbridge/Settings.kt) | 45 | Almacenamiento local (URL, token, intervalo) |
+| [`SmsReceiver.kt`](android/app/src/main/java/com/odincodex/smsbridge/SmsReceiver.kt) | 44 | Captura los SMS entrantes |
+| [`BootReceiver.kt`](android/app/src/main/java/com/odincodex/smsbridge/BootReceiver.kt) | 22 | Reanuda la pasarela al reiniciar el teléfono |
+
+### Lo que NO hace
+
+- **Ningún servidor incrustado.** No hay una sola URL escrita en el código — búscala. Habla *únicamente* con la dirección que tú escribes.
+- **Sin analytics, sin telemetría, sin reporte de errores, sin publicidad.** La lista completa de dependencias es `androidx.core`, `appcompat`, `material`, `coroutines` y `okhttp`. Ni Firebase, ni Google Analytics, ni SDK de terceros.
+- **Tus SMS nunca salen de tu infraestructura.** El contenido va del teléfono a tu servidor y a ningún otro sitio.
+
+### Por qué cada permiso
+
+| Permiso | Para qué se necesita |
+|---|---|
+| `SEND_SMS` | El objetivo del proyecto: enviar los mensajes. |
+| `RECEIVE_SMS` | Capturar los SMS entrantes para reenviarlos a tu webhook. |
+| `INTERNET`, `ACCESS_NETWORK_STATE` | Hablar con tu servidor. |
+| `FOREGROUND_SERVICE`, `..._DATA_SYNC` | Android mata los servicios en segundo plano; una pasarela que muere en silencio es peor que no tenerla. |
+| `POST_NOTIFICATIONS` | Android **exige** una notificación visible para un servicio en primer plano. |
+| `RECEIVE_BOOT_COMPLETED` | Reanudar tras un corte de luz — solo si la dejaste encendida. |
+| `WAKE_LOCK`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Mantener el socket vivo mientras el teléfono duerme. |
+
+`BROADCAST_SMS` aparece en el manifiesto como **protección**, no como petición: garantiza que solo el sistema Android pueda disparar el receptor de SMS, para que otra app no pueda inyectar mensajes entrantes falsos.
+
+### Compílala tú mismo
+
+El binario más seguro es el que compilas tú:
+
+```bash
+git clone https://github.com/jofelvi/sms-bridge-mobile
+cd sms-bridge-mobile/android
+./gradlew assembleRelease
+# app/build/outputs/apk/release/app-release.apk
+```
+
+Necesitas JDK 17 y el SDK de Android. Ojo: el APK publicado está firmado con la clave de depuración de Android, así que **no** será idéntico byte a byte al tuyo — si necesitas una cadena de confianza verificable, compílalo y fírmalo con tu propia clave.
 
 ## API
 

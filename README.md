@@ -57,6 +57,57 @@ curl -X POST localhost:8080/api/messages \
 **5. Install the Android app** ([latest release](../../releases/latest)), enter your server URL and the `DEVICE_TOKEN`, tap **Encender pasarela** — and the message goes out through your line.
 
 > The app requires SMS permissions, so it is distributed as an APK (sideload), not through the Play Store. See [Notes](#notes).
+>
+> 🔍 **Rather not trust a binary?** The entire app is 930 lines of Kotlin — [read it](android/app/src/main/java/com/odincodex/smsbridge/) or [build it yourself](#audit-it-yourself--dont-trust-the-binary).
+
+## Audit it yourself — don't trust the binary
+
+You are about to give an app permission to **read and send your SMS**. You should be suspicious. So the whole app is here, and it is deliberately small enough to read in one sitting: **9 files, 930 lines of Kotlin**.
+
+| File | Lines | What it does |
+|---|---|---|
+| [`BridgeService.kt`](android/app/src/main/java/com/odincodex/smsbridge/BridgeService.kt) | 224 | Foreground service: keeps the bridge alive, drains the queue |
+| [`MainActivity.kt`](android/app/src/main/java/com/odincodex/smsbridge/MainActivity.kt) | 160 | The only screen: server URL, token, on/off |
+| [`PushClient.kt`](android/app/src/main/java/com/odincodex/smsbridge/PushClient.kt) | 122 | WebSocket to **your** server + reconnect |
+| [`ApiClient.kt`](android/app/src/main/java/com/odincodex/smsbridge/ApiClient.kt) | 120 | Every HTTP call the app makes — all of them |
+| [`SmsSender.kt`](android/app/src/main/java/com/odincodex/smsbridge/SmsSender.kt) | 106 | Sends the SMS, asks for the delivery report |
+| [`SmsSentReceiver.kt`](android/app/src/main/java/com/odincodex/smsbridge/SmsSentReceiver.kt) | 87 | Reports sent/delivered/failed back |
+| [`Settings.kt`](android/app/src/main/java/com/odincodex/smsbridge/Settings.kt) | 45 | Local storage (URL, token, interval) |
+| [`SmsReceiver.kt`](android/app/src/main/java/com/odincodex/smsbridge/SmsReceiver.kt) | 44 | Captures inbound SMS |
+| [`BootReceiver.kt`](android/app/src/main/java/com/odincodex/smsbridge/BootReceiver.kt) | 22 | Restarts the bridge after a reboot |
+
+### What it does NOT do
+
+- **No hardcoded servers.** There is not a single URL baked into the app — grep for it. It talks *only* to the address you type in.
+- **No analytics, no telemetry, no crash reporting, no ads.** The full dependency list is `androidx.core`, `appcompat`, `material`, `coroutines` and `okhttp`. No Firebase, no Google Analytics, no third-party SDK.
+- **Your SMS never leave your infrastructure.** Message bodies go from the phone to your server and nowhere else.
+
+### Why each permission
+
+| Permission | Why it is needed |
+|---|---|
+| `SEND_SMS` | The whole point: sending the messages. |
+| `RECEIVE_SMS` | Capturing inbound SMS to forward to your webhook. |
+| `INTERNET`, `ACCESS_NETWORK_STATE` | Talking to your server. |
+| `FOREGROUND_SERVICE`, `..._DATA_SYNC` | Android kills background services; a gateway that dies silently is worse than none. |
+| `POST_NOTIFICATIONS` | Android **requires** a visible notification for a foreground service. |
+| `RECEIVE_BOOT_COMPLETED` | Resume the bridge after a power cut — only if you left it on. |
+| `WAKE_LOCK`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Keep the socket alive while the phone sleeps. |
+
+`BROADCAST_SMS` appears in the manifest as a **protection**, not a request: it ensures only the Android system can trigger the SMS receiver, so another app cannot inject fake inbound messages.
+
+### Build it yourself
+
+The safest binary is the one you compile:
+
+```bash
+git clone https://github.com/jofelvi/sms-bridge-mobile
+cd sms-bridge-mobile/android
+./gradlew assembleRelease
+# app/build/outputs/apk/release/app-release.apk
+```
+
+You need JDK 17 and the Android SDK. Note the published APK is signed with Android's debug key, so it will **not** be byte-identical to yours — if you need a verifiable chain of trust, build and sign it with your own key.
 
 ## API
 
