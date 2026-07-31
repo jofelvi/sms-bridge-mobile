@@ -1,0 +1,16 @@
+services:
+  sms-bridge:
+    build: ./server
+    ports:
+      - '8080:8080'
+    environment:
+      PORT: 8080
+      API_KEY: ${API_KEY:?define API_KEY en .env}
+      DEVICE_TOKEN: ${DEVICE_TOKEN:?define DEVICE_TOKEN en .env}
+      DATABASE_PATH: /data/sms-bridge.db
+    volumes:
+      - sms-bridge-data:/data
+    restart: unless-stopped
+
+volumes:
+  sms-bridge-data:
