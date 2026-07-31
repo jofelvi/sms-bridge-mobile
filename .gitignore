@@ -11,3 +11,6 @@ google-services.json
 *.keystore
 *.jks
 .DS_Store
+data/
+*.db-shm
+*.db-wal
