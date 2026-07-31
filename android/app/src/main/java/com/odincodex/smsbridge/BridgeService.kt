@@ -12,6 +12,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +32,10 @@ class BridgeService : Service() {
 
     private var job: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
+    private var push: PushClient? = null
+
+    /** Evita que dos disparos simultaneos (push + respaldo) hagan doble trabajo. */
+    private val draining = AtomicBoolean(false)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -43,17 +48,43 @@ class BridgeService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Iniciando..."))
 
         if (job?.isActive != true) {
-            job = scope.launch { loop() }
+            job = scope.launch { safetyNetLoop() }
         }
+        connectPush()
 
         // START_STICKY: si el sistema mata el proceso, que lo reviva.
         return START_STICKY
     }
 
-    private suspend fun loop() {
+    /**
+     * Canal principal: el servidor avisa por WebSocket y el envio sale al
+     * instante, sin esperar al siguiente sondeo.
+     */
+    private fun connectPush() {
         val settings = Settings(applicationContext)
-        val sender = SmsSender(applicationContext)
-        var heartbeatTick = 0
+        if (!settings.isConfigured || push != null) return
+
+        push = PushClient(
+            serverUrl = settings.serverUrl,
+            token = settings.deviceToken,
+            onNewMessage = { scope.launch { drainQueue() } },
+            onStateChange = { connected ->
+                updateNotification(
+                    if (connected) "Conectado · push activo"
+                    else "Reconectando..."
+                )
+            },
+        ).also { it.connect() }
+    }
+
+    /**
+     * Red de seguridad. El push hace el trabajo real; esto solo cubre el caso
+     * de que el socket se caiga sin avisar. Por eso el intervalo es largo
+     * (minutos): no gasta bateria pero garantiza que ningun mensaje se quede
+     * clavado en la cola para siempre.
+     */
+    private suspend fun safetyNetLoop() {
+        val settings = Settings(applicationContext)
 
         while (scope.isActive) {
             if (!settings.isConfigured) {
@@ -62,36 +93,57 @@ class BridgeService : Service() {
                 continue
             }
 
-            val api = ApiClient(settings.serverUrl, settings.deviceToken)
-
-            try {
-                val pending = api.fetchPending()
-                for (message in pending) {
-                    try {
-                        sender.send(message)
-                        Log.i(TAG, "Enviando ${message.id} a ${message.phoneNumber}")
-                    } catch (e: Exception) {
-                        // El envio fallo antes de salir: se reporta de una, sin
-                        // esperar el callback que nunca va a llegar.
-                        api.reportResult(message.id, false, e.message ?: "Error al enviar")
-                    }
-                }
-
-                // Heartbeat cada ~4 vueltas para no gastar bateria de mas.
-                if (heartbeatTick++ % 4 == 0) {
-                    api.heartbeat(batteryLevel(), BuildConfig.VERSION_NAME)
-                }
-
-                updateNotification(
-                    if (pending.isEmpty()) "Conectado · esperando mensajes"
-                    else "Enviados ${pending.size} mensaje(s)"
-                )
-            } catch (e: Exception) {
-                Log.w(TAG, "Ciclo fallido: ${e.message}")
-                updateNotification("Sin conexion con el servidor")
-            }
+            connectPush()
+            drainQueue()
+            heartbeat()
 
             delay(settings.pollSeconds * 1000L)
+        }
+    }
+
+    /** Envia todo lo que haya en la cola. Reentrante-seguro. */
+    private fun drainQueue() {
+        val settings = Settings(applicationContext)
+        if (!settings.isConfigured) return
+        if (!draining.compareAndSet(false, true)) return
+
+        try {
+            val api = ApiClient(settings.serverUrl, settings.deviceToken)
+            val sender = SmsSender(applicationContext)
+            val pending = api.fetchPending()
+
+            for (message in pending) {
+                try {
+                    sender.send(message)
+                    Log.i(TAG, "Enviando ${message.id} a ${message.phoneNumber}")
+                } catch (e: Exception) {
+                    // Fallo antes de salir: se reporta de una, sin esperar el
+                    // callback del sistema que nunca va a llegar.
+                    api.reportResult(message.id, false, e.message ?: "Error al enviar")
+                }
+            }
+
+            if (pending.isNotEmpty()) {
+                updateNotification("Enviados ${pending.size} mensaje(s)")
+            } else if (push?.connected == true) {
+                updateNotification("Conectado · push activo")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo vaciar la cola: ${e.message}")
+            updateNotification("Sin conexion con el servidor")
+        } finally {
+            draining.set(false)
+        }
+    }
+
+    private fun heartbeat() {
+        val settings = Settings(applicationContext)
+        if (!settings.isConfigured) return
+        try {
+            ApiClient(settings.serverUrl, settings.deviceToken)
+                .heartbeat(batteryLevel(), BuildConfig.VERSION_NAME)
+        } catch (e: Exception) {
+            Log.w(TAG, "Heartbeat fallido: ${e.message}")
         }
     }
 
@@ -145,6 +197,8 @@ class BridgeService : Service() {
     }
 
     override fun onDestroy() {
+        push?.disconnect()
+        push = null
         job?.cancel()
         super.onDestroy()
     }

@@ -10,9 +10,11 @@ export interface AppDeps {
   db: Db;
   config: Config;
   fetchImpl?: FetchLike;
+  /** Hub de WebSocket. Ausente en los tests que no ejercitan el push. */
+  hub?: { notifyNewMessage(): number; connectedCount: number };
 }
 
-export function createApp({ db, config, fetchImpl }: AppDeps): Express {
+export function createApp({ db, config, fetchImpl, hub }: AppDeps): Express {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
@@ -26,7 +28,11 @@ export function createApp({ db, config, fetchImpl }: AppDeps): Express {
   // /status va como ruta EXACTA y antes del router del dispositivo: la consulta
   // el backend con la API key, no el telefono. Montarla dentro del router haria
   // que el auth del dispositivo la rechazara primero.
-  app.get('/api/device/status', bearerAuth(config.apiKey), deviceStatusHandler(db));
+  app.get(
+    '/api/device/status',
+    bearerAuth(config.apiKey),
+    deviceStatusHandler(db, hub),
+  );
 
   app.use(
     '/api/device',
@@ -34,7 +40,7 @@ export function createApp({ db, config, fetchImpl }: AppDeps): Express {
     deviceRoutes(db, config, fetchImpl),
   );
 
-  app.use('/api', bearerAuth(config.apiKey), publicRoutes(db));
+  app.use('/api', bearerAuth(config.apiKey), publicRoutes(db, hub));
 
   return app;
 }

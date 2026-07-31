@@ -85,7 +85,10 @@ export function deviceRoutes(
  * '/api/device', el auth del dispositivo correria primero y devolveria 401
  * aunque el llamante traiga la API key correcta.
  */
-export function deviceStatusHandler(db: Db): RequestHandler {
+export function deviceStatusHandler(
+  db: Db,
+  hub?: { connectedCount: number },
+): RequestHandler {
   return (_req, res) => {
     const row = db.prepare('SELECT * FROM device_status WHERE id = 1').get() as
       | {
@@ -95,14 +98,24 @@ export function deviceStatusHandler(db: Db): RequestHandler {
         }
       | undefined;
 
+    // pushConnected es la senal fuerte: si el socket esta abierto, el telefono
+    // esta vivo AHORA. lastSeenAt solo dice cuando dio senales por ultima vez.
+    const pushConnected = (hub?.connectedCount ?? 0) > 0;
+
     if (!row?.last_seen_at) {
-      res.json({ online: false, lastSeenAt: null, batteryLevel: null });
+      res.json({
+        online: pushConnected,
+        pushConnected,
+        lastSeenAt: null,
+        batteryLevel: null,
+      });
       return;
     }
 
     const age = Date.now() - new Date(row.last_seen_at).getTime();
     res.json({
-      online: age < OFFLINE_AFTER_MS,
+      online: pushConnected || age < OFFLINE_AFTER_MS,
+      pushConnected,
       lastSeenAt: row.last_seen_at,
       batteryLevel: row.battery_level,
       appVersion: row.app_version,

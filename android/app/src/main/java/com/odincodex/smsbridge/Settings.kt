@@ -19,10 +19,14 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TOKEN, value.trim()).apply()
 
-    /** Cada cuantos segundos le pregunta al servidor si hay trabajo. */
+    /**
+     * Intervalo de la RED DE SEGURIDAD, no del canal principal: los mensajes
+     * llegan por push (WebSocket) al instante. Este sondeo largo solo cubre el
+     * caso de que el socket se caiga sin avisar, sin gastar bateria.
+     */
     var pollSeconds: Int
-        get() = prefs.getInt(KEY_POLL, 15)
-        set(value) = prefs.edit().putInt(KEY_POLL, value.coerceIn(5, 300)).apply()
+        get() = prefs.getInt(KEY_POLL, 300)
+        set(value) = prefs.edit().putInt(KEY_POLL, value.coerceIn(30, 3600)).apply()
 
     /** Si el usuario dejo el puente encendido; se usa para reanudar al reiniciar. */
     var running: Boolean

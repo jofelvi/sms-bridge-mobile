@@ -147,7 +147,9 @@ class MainActivity : AppCompatActivity() {
     private fun refreshStatus() {
         statusText.text = when {
             !settings.isConfigured -> "Sin configurar"
-            settings.running -> "Pasarela ENCENDIDA · sondeo cada ${settings.pollSeconds}s"
+            settings.running ->
+                "Pasarela ENCENDIDA · push instantaneo\n" +
+                    "(respaldo cada ${settings.pollSeconds / 60} min por si el push se cae)"
             else -> "Configurada · pasarela apagada"
         }
     }

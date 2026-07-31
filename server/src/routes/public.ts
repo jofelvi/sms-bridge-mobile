@@ -2,7 +2,12 @@ import { Router } from 'express';
 import type { Db, MessageDirection, MessageStatus } from '../db.js';
 import { enqueue, getById, list } from '../messages.js';
 
-export function publicRoutes(db: Db): Router {
+/** Solo la parte del hub que estas rutas necesitan (facilita testear). */
+export interface Notifier {
+  notifyNewMessage(): number;
+}
+
+export function publicRoutes(db: Db, notifier?: Notifier): Router {
   const router = Router();
 
   router.post('/messages', (req, res) => {
@@ -25,12 +30,17 @@ export function publicRoutes(db: Db): Router {
       webhookUrl: typeof webhookUrl === 'string' ? webhookUrl : undefined,
     });
 
+    // Push: se avisa al telefono en el momento. Solo si es nuevo — reavisar
+    // por un duplicado haria trabajar al telefono para nada.
+    const pushedTo = duplicate ? 0 : (notifier?.notifyNewMessage() ?? 0);
+
     // 200 en el duplicado: no se creo nada nuevo, pero no es un error.
     res.status(duplicate ? 200 : 201).json({
       id: message.id,
       status: message.status,
       segments: message.segments,
       duplicate,
+      pushedTo,
     });
   });
 
