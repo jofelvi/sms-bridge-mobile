@@ -1,4 +1,13 @@
-# Seguridad
+# Security / Seguridad
+
+> This document is in Spanish. For an English summary of the security model, see
+> the *Notes* section of the [README](README.md) — the short version is: two
+> separate credentials (backend vs phone), constant-time token comparison,
+> WebSocket authenticated during the handshake, per-IP rate limiting, and
+> **you must put TLS in front in production**.
+
+---
+
 
 ## Modelo de amenazas
 
