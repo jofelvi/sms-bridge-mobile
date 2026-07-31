@@ -49,9 +49,16 @@ class PushClient(
         val wsUrl = serverUrl
             .replace("https://", "wss://")
             .replace("http://", "ws://")
-            .trimEnd('/') + "/ws/device?token=$token"
+            .trimEnd('/') + "/ws/device"
 
-        val request = Request.Builder().url(wsUrl).build()
+        // El token va en la CABECERA, no en la query: las URLs quedan escritas
+        // en los logs de nginx y de cualquier proxy intermedio, y ahi el token
+        // sobreviviria en texto plano. El servidor acepta ambas formas, pero
+        // este cliente usa siempre la segura.
+        val request = Request.Builder()
+            .url(wsUrl)
+            .header("Authorization", "Bearer $token")
+            .build()
 
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {

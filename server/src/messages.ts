@@ -170,7 +170,14 @@ export function list(db: Db, filters: ListFilters): MessageRow[] {
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  params.push(filters.limit ?? 100);
+
+  // Se acota el limite: llega de la query del usuario y un NaN o un numero
+  // gigante iria directo a SQLite.
+  const rawLimit = Number(filters.limit ?? 100);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 500)
+    : 100;
+  params.push(limit);
 
   return db
     .prepare(`SELECT * FROM messages ${where} ORDER BY created_at DESC LIMIT ?`)
