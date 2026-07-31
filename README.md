@@ -9,12 +9,16 @@ Licencia MIT.
 ## Cómo funciona
 
 ```
-[Tu backend] ──POST /api/messages──► [sms-bridge] ◄──consulta──► [App Android] ──► SMS
-                                          │ SQLite                     │
-                    webhooks ◄────────────┴── estado + SMS entrante ───┘
+[Tu backend] ──POST /api/messages──► [sms-bridge] ══push WebSocket══► [App Android] ──► SMS
+                                          │ SQLite                          │
+                    webhooks ◄────────────┴──── estado + SMS entrante ──────┘
 ```
 
-El teléfono le pregunta al servidor si hay mensajes por enviar, los manda por SMS y reporta el resultado. También sube los SMS que recibe.
+El servidor **empuja** el aviso al teléfono por WebSocket en cuanto entra un mensaje: la entrega es instantánea (**~300 ms** medidos, no los segundos que tardaría un sondeo). El teléfono lo envía por SMS y reporta el resultado. También sube los SMS que recibe.
+
+**¿Por qué WebSocket y no Firebase (FCM)?** El teléfono ya corre un servicio en primer plano 24/7 —obligatorio para poder enviar—, así que mantener el socket no cuesta nada extra. El superpoder de FCM es despertar apps dormidas, algo que aquí no hace falta. Y sobre todo: **no obliga a nadie a crear un proyecto Firebase ni a recompilar el APK** para usar este proyecto.
+
+El teléfono además sondea cada 5 minutos como **red de seguridad**: si el socket se cae sin avisar (típico en redes móviles), ningún mensaje se queda clavado.
 
 ## Quickstart
 
@@ -59,7 +63,7 @@ curl -X POST localhost:8080/api/messages \
 | `/api/messages` | POST | Encola un SMS. Body: `to`, `body`, y opcionales `clientMessageId`, `webhookUrl`. |
 | `/api/messages/:id` | GET | Estado de un mensaje. |
 | `/api/messages` | GET | Listado. Filtros: `status`, `direction` (`inbound`/`outbound`), `limit`. |
-| `/api/device/status` | GET | Si el teléfono está vivo, su batería y cuándo se le vio por última vez. |
+| `/api/device/status` | GET | Si el teléfono está vivo (`pushConnected` = socket abierto ahora), su batería y cuándo se le vio por última vez. |
 
 **Idempotencia:** si mandas el mismo `clientMessageId` dos veces, el segundo intento responde `200` con `duplicate: true` y **no envía un segundo SMS**. Úsalo siempre: la red móvil falla y los reintentos cuestan dinero real.
 
@@ -71,6 +75,7 @@ curl -X POST localhost:8080/api/messages \
 | `/api/device/result` | POST | Reporta el resultado: `{ id, status: "delivered"\|"failed", error? }`. |
 | `/api/device/inbox` | POST | Sube un SMS recibido: `{ from, body }`. |
 | `/api/device/heartbeat` | POST | Señal de vida: `{ batteryLevel?, appVersion? }`. |
+| `/ws/device` | WS | Canal push. Autentica en el handshake: `?token=<DEVICE_TOKEN>` o cabecera `Authorization`. |
 
 Las dos credenciales son **distintas a propósito**: si pierdes el teléfono, revocas su token sin tocar la clave de tu backend. El token del dispositivo **no puede** encolar mensajes.
 
@@ -109,14 +114,15 @@ El servidor **no arranca** si falta una clave o si ambas son iguales.
 ```bash
 cd server
 npm install
-npm test          # 34 tests
+npm test          # 39 tests
 npm run dev       # con recarga en caliente
 ```
 
 ## Estado
 
-- [x] Servidor: cola, API, webhooks, estado del dispositivo
-- [ ] App Android (Kotlin): envío, recepción, emparejado por QR, FCM opcional
+- [x] Servidor: cola, API, webhooks, estado del dispositivo, **push por WebSocket**
+- [x] App Android (Kotlin): envío, recepción, push instantáneo, reconexión con backoff
+- [ ] Emparejado por QR (hoy se pega la URL y el token a mano)
 
 ## Licencia
 
