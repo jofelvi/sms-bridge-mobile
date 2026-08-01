@@ -52,6 +52,15 @@ class BridgeService : Service() {
         }
         connectPush()
 
+        // Inscribir el token FCM cada vez que arranca el servicio: barato, y
+        // cubre reinstalaciones o rotaciones de token que pasaron dormidos.
+        FcmRegistrar.register(applicationContext)
+
+        // Disparo inmediato (viene del aviso FCM): drena sin esperar al loop.
+        if (intent?.action == ACTION_DRAIN) {
+            scope.launch { drainQueue() }
+        }
+
         // START_STICKY: si el sistema mata el proceso, que lo reviva.
         return START_STICKY
     }
@@ -207,9 +216,24 @@ class BridgeService : Service() {
         private const val TAG = "BridgeService"
         private const val CHANNEL_ID = "sms_bridge"
         private const val NOTIFICATION_ID = 1
+        private const val ACTION_DRAIN = "com.odincodex.smsbridge.action.DRAIN"
 
         fun start(context: Context) {
             val intent = Intent(context, BridgeService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        /**
+         * Despierta el servicio y drena la cola YA (lo invoca el aviso FCM).
+         * Si el servicio estaba muerto, ademas lo revive completo.
+         */
+        fun drainNow(context: Context) {
+            val intent = Intent(context, BridgeService::class.java)
+                .setAction(ACTION_DRAIN)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

@@ -5,6 +5,12 @@ export interface Config {
   databasePath: string;
   deviceBatchSize: number;
   maxAttempts: number;
+  /**
+   * Ruta al service account de Firebase para el push por FCM. OPCIONAL:
+   * sin ella el servidor funciona igual (WebSocket + polling); con ella
+   * ademas despierta al telefono aunque Android lo tenga dormido.
+   */
+  fcmServiceAccountPath: string | null;
 }
 
 function requireVar(env: NodeJS.ProcessEnv, name: string): string {
@@ -47,5 +53,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     databasePath: (env.DATABASE_PATH ?? './data/sms-bridge.db').trim(),
     deviceBatchSize: numberVar(env, 'DEVICE_BATCH_SIZE', 10),
     maxAttempts: numberVar(env, 'MAX_ATTEMPTS', 3),
+    fcmServiceAccountPath:
+      (env.FCM_SERVICE_ACCOUNT_PATH ?? '').trim() || null,
   };
 }

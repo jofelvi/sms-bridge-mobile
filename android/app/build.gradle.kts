@@ -3,6 +3,13 @@
     id("org.jetbrains.kotlin.android")
 }
 
+// FCM es OPCIONAL: el plugin de google-services exige google-services.json y
+// truena el build si falta. Quien adopte el proyecto sin Firebase compila
+// igual; con el archivo presente, el push por FCM queda activo.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.odincodex.smsbridge"
     compileSdk = 35
@@ -53,4 +60,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Push por FCM (tercer canal, junto al WebSocket y al polling). La clase
+    // solo se activa si Firebase inicializa (hay google-services.json);
+    // sin el, este jar queda dormido y no pesa en runtime.
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
 }

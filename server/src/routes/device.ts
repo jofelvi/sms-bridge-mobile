@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import type { Config } from '../config.js';
 import type { Db, MessageStatus } from '../db.js';
+import type { FcmPush } from '../fcm.js';
 import { claimPending, markResult, recordInbound } from '../messages.js';
 import { buildPayload, notifyWebhook, type FetchLike } from '../webhooks.js';
 
@@ -11,8 +12,30 @@ export function deviceRoutes(
   db: Db,
   config: Config,
   fetchImpl?: FetchLike,
+  fcm?: FcmPush,
 ): Router {
   const router = Router();
+
+  // El telefono registra (o refresca) su token FCM. Si el servidor no tiene
+  // FCM configurado igual lo guarda: al activarlo despues ya hay tokens.
+  router.post('/fcm-token', (req, res) => {
+    const { token } = req.body ?? {};
+    if (typeof token !== 'string' || !token.trim()) {
+      res.status(400).json({ error: 'El campo "token" es obligatorio.' });
+      return;
+    }
+    if (fcm) {
+      fcm.saveToken(token.trim());
+    } else {
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO fcm_tokens (token, created_at, last_seen_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(token) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
+      ).run(token.trim(), now, now);
+    }
+    res.json({ ok: true, fcmEnabled: fcm?.enabled ?? false });
+  });
 
   router.get('/pending', (_req, res) => {
     res.json({ messages: claimPending(db, config.deviceBatchSize) });
@@ -88,6 +111,7 @@ export function deviceRoutes(
 export function deviceStatusHandler(
   db: Db,
   hub?: { connectedCount: number },
+  fcm?: { enabled: boolean; tokenCount: number },
 ): RequestHandler {
   return (_req, res) => {
     const row = db.prepare('SELECT * FROM device_status WHERE id = 1').get() as
@@ -101,11 +125,16 @@ export function deviceStatusHandler(
     // pushConnected es la senal fuerte: si el socket esta abierto, el telefono
     // esta vivo AHORA. lastSeenAt solo dice cuando dio senales por ultima vez.
     const pushConnected = (hub?.connectedCount ?? 0) > 0;
+    const fcmInfo = {
+      fcmEnabled: fcm?.enabled ?? false,
+      fcmTokens: fcm?.tokenCount ?? 0,
+    };
 
     if (!row?.last_seen_at) {
       res.json({
         online: pushConnected,
         pushConnected,
+        ...fcmInfo,
         lastSeenAt: null,
         batteryLevel: null,
       });
@@ -116,6 +145,7 @@ export function deviceStatusHandler(
     res.json({
       online: pushConnected || age < OFFLINE_AFTER_MS,
       pushConnected,
+      ...fcmInfo,
       lastSeenAt: row.last_seen_at,
       batteryLevel: row.battery_level,
       appVersion: row.app_version,

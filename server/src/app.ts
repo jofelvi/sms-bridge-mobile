@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
+import type { FcmPush } from './fcm.js';
 import { bearerAuth } from './auth.js';
 import { rateLimit } from './rateLimit.js';
 import { publicRoutes } from './routes/public.js';
@@ -13,9 +14,11 @@ export interface AppDeps {
   fetchImpl?: FetchLike;
   /** Hub de WebSocket. Ausente en los tests que no ejercitan el push. */
   hub?: { notifyNewMessage(): number; connectedCount: number };
+  /** Push FCM opcional (canal adicional; registra tokens aunque este apagado). */
+  fcm?: FcmPush;
 }
 
-export function createApp({ db, config, fetchImpl, hub }: AppDeps): Express {
+export function createApp({ db, config, fetchImpl, hub, fcm }: AppDeps): Express {
   const app = express();
 
   // Detras de un proxy con TLS (nginx/Caddy), sin esto todas las peticiones
@@ -36,7 +39,7 @@ export function createApp({ db, config, fetchImpl, hub }: AppDeps): Express {
   app.get(
     '/api/device/status',
     bearerAuth(config.apiKey),
-    deviceStatusHandler(db, hub),
+    deviceStatusHandler(db, hub, fcm),
   );
 
   // El telefono consulta seguido (push + respaldo + acuses): tope alto.
@@ -44,7 +47,7 @@ export function createApp({ db, config, fetchImpl, hub }: AppDeps): Express {
     '/api/device',
     rateLimit({ windowMs: 60_000, max: 240 }),
     bearerAuth(config.deviceToken),
-    deviceRoutes(db, config, fetchImpl),
+    deviceRoutes(db, config, fetchImpl, fcm),
   );
 
   // Encolar SMS cuesta dinero real: tope conservador para que un bug del

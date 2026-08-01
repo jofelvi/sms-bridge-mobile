@@ -66,5 +66,13 @@ export function migrate(db: Db): void {
       battery_level INTEGER,
       app_version TEXT
     );
+
+    -- Tokens FCM de los telefonos-pasarela (canal push adicional al WebSocket).
+    -- Varios registros = varios telefonos.
+    CREATE TABLE IF NOT EXISTS fcm_tokens (
+      token TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
   `);
 }

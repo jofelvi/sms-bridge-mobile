@@ -92,6 +92,14 @@ class ApiClient(private val baseUrl: String, private val token: String) {
         )
     }
 
+    /** Inscribe el token FCM para que el servidor pueda despertarnos por push. */
+    fun registerFcmToken(token: String): Boolean {
+        return postJson(
+            "/api/device/fcm-token",
+            JSONObject().put("token", token),
+        )
+    }
+
     /** Señal de vida para que el servidor sepa que el telefono sigue vivo. */
     fun heartbeat(batteryLevel: Int, appVersion: String): Boolean {
         return postJson(
