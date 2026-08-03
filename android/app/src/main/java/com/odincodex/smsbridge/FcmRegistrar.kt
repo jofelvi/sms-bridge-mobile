@@ -18,6 +18,10 @@ object FcmRegistrar {
 
     private const val TAG = "FcmRegistrar"
 
+    /** true si este APK se compilo con Firebase (hay google-services.json). */
+    fun isAvailable(context: Context): Boolean =
+        FirebaseApp.getApps(context).isNotEmpty()
+
     /** Con token explicito (onNewToken) lo manda directo; sin el, lo pide a FCM. */
     fun register(context: Context, token: String? = null) {
         val settings = Settings(context)

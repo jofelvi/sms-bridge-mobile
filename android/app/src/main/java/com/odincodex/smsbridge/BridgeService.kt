@@ -12,7 +12,6 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,8 +33,6 @@ class BridgeService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO)
     private var push: PushClient? = null
 
-    /** Evita que dos disparos simultaneos (push + respaldo) hagan doble trabajo. */
-    private val draining = AtomicBoolean(false)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -47,14 +44,29 @@ class BridgeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("Iniciando..."))
 
+        // Inscribir el token FCM cada vez que arranca el servicio: barato, y
+        // cubre reinstalaciones o rotaciones de token que pasaron dormidos.
+        FcmRegistrar.register(applicationContext)
+
+        // ── Modo ahorro ──
+        // FCM desperto la app con la pasarela APAGADA: se envia lo que haya y
+        // el servicio se apaga solo. Asi el telefono no sostiene ningun socket
+        // ni notificacion permanente — que es justo de donde salia el consumo
+        // de bateria. No se levanta el WebSocket ni el bucle de respaldo.
+        if (intent?.action == ACTION_DRAIN && !Settings(applicationContext).running) {
+            scope.launch {
+                updateNotification("Enviando (modo ahorro)...")
+                drainQueue()
+                heartbeat()
+                stopSelf()
+            }
+            return START_NOT_STICKY
+        }
+
         if (job?.isActive != true) {
             job = scope.launch { safetyNetLoop() }
         }
         connectPush()
-
-        // Inscribir el token FCM cada vez que arranca el servicio: barato, y
-        // cubre reinstalaciones o rotaciones de token que pasaron dormidos.
-        FcmRegistrar.register(applicationContext)
 
         // Disparo inmediato (viene del aviso FCM): drena sin esperar al loop.
         if (intent?.action == ACTION_DRAIN) {
@@ -110,38 +122,13 @@ class BridgeService : Service() {
         }
     }
 
-    /** Envia todo lo que haya en la cola. Reentrante-seguro. */
+    /** Envia todo lo que haya en la cola. Reentrante-seguro (ver QueueDrainer). */
     private fun drainQueue() {
-        val settings = Settings(applicationContext)
-        if (!settings.isConfigured) return
-        if (!draining.compareAndSet(false, true)) return
-
-        try {
-            val api = ApiClient(settings.serverUrl, settings.deviceToken)
-            val sender = SmsSender(applicationContext)
-            val pending = api.fetchPending()
-
-            for (message in pending) {
-                try {
-                    sender.send(message)
-                    Log.i(TAG, "Enviando ${message.id} a ${message.phoneNumber}")
-                } catch (e: Exception) {
-                    // Fallo antes de salir: se reporta de una, sin esperar el
-                    // callback del sistema que nunca va a llegar.
-                    api.reportResult(message.id, false, e.message ?: "Error al enviar")
-                }
-            }
-
-            if (pending.isNotEmpty()) {
-                updateNotification("Enviados ${pending.size} mensaje(s)")
-            } else if (push?.connected == true) {
-                updateNotification("Conectado · push activo")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "No se pudo vaciar la cola: ${e.message}")
-            updateNotification("Sin conexion con el servidor")
-        } finally {
-            draining.set(false)
+        val result = QueueDrainer.drain(applicationContext)
+        when {
+            result.failed -> updateNotification("Sin conexion con el servidor")
+            result.sent > 0 -> updateNotification("Enviados ${result.sent} mensaje(s)")
+            push?.connected == true -> updateNotification("Conectado · push activo")
         }
     }
 

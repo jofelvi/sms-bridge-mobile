@@ -18,8 +18,11 @@ android {
         applicationId = "com.odincodex.smsbridge"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        // 0.4.0 se compilo sin commitear el numero (el codigo era el mismo).
+        // Se salta a 5/0.5.0 para que Android no rechace la instalacion por
+        // "downgrade" sobre los telefonos que ya tienen la 0.4.0.
+        versionCode = 5
+        versionName = "0.5.0"
     }
 
     buildTypes {

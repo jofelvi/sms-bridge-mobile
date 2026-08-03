@@ -38,6 +38,12 @@ class MainActivity : AppCompatActivity() {
         tokenInput.setText(settings.deviceToken)
         refreshStatus()
 
+        // Inscribir el token FCM al abrir la app, NO solo al encender la
+        // pasarela: si solo se hiciera al arrancar el servicio, con la
+        // pasarela apagada el servidor no tendria a quien despertar y el
+        // canal FCM nunca serviria de nada.
+        FcmRegistrar.register(this)
+
         findViewById<Button>(R.id.button_save).setOnClickListener { save() }
         findViewById<Button>(R.id.button_test).setOnClickListener { testConnection() }
         findViewById<Button>(R.id.button_start).setOnClickListener { startBridge() }
@@ -77,6 +83,9 @@ class MainActivity : AppCompatActivity() {
         settings.serverUrl = url
         settings.deviceToken = token
         toast("Guardado")
+        // Reinscribir: si antes no habia servidor configurado, el token
+        // todavia no se pudo mandar a ninguna parte.
+        FcmRegistrar.register(this)
         refreshStatus()
     }
 
@@ -145,11 +154,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshStatus() {
+        val fcm = FcmRegistrar.isAvailable(this)
         statusText.text = when {
             !settings.isConfigured -> "Sin configurar"
             settings.running ->
-                "Pasarela ENCENDIDA · push instantaneo\n" +
+                "Pasarela ENCENDIDA · push instantaneo" +
+                    (if (fcm) " + FCM" else "") + "\n" +
                     "(respaldo cada ${settings.pollSeconds / 60} min por si el push se cae)"
+            // Con FCM inscrito el telefono NO necesita el servicio prendido:
+            // Google lo despierta cuando hay un SMS que enviar, y por eso
+            // gasta mucha menos bateria que el socket propio 24/7.
+            fcm ->
+                "Pasarela apagada · FCM ACTIVO\n" +
+                    "Se despierta sola cuando entra un SMS (modo ahorro).\n" +
+                    "Enciendela solo si quieres el socket permanente."
             else -> "Configurada · pasarela apagada"
         }
     }

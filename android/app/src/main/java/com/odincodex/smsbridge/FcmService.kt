@@ -19,9 +19,20 @@ import com.google.firebase.messaging.RemoteMessage
 class FcmService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["type"] == "new-message") {
-            Log.i(TAG, "Aviso por FCM: hay mensajes en cola")
+        if (message.data["type"] != "new-message") return
+        Log.i(TAG, "Aviso por FCM: hay mensajes en cola")
+
+        // Preferido: levantar el servicio (muestra notificacion y, si la
+        // pasarela esta apagada, se apaga solo al terminar).
+        try {
             BridgeService.drainNow(applicationContext)
+        } catch (e: Exception) {
+            // Android 12+ puede negar arrancar un foreground service desde
+            // segundo plano. El aviso de FCM da unos segundos de ejecucion:
+            // se envia aqui mismo antes que perder el SMS hasta el sondeo.
+            Log.w(TAG, "No se pudo levantar el servicio (${e.message}); envio directo")
+            val result = QueueDrainer.drain(applicationContext)
+            Log.i(TAG, "Envio directo por FCM: ${result.sent} mensaje(s)")
         }
     }
 
